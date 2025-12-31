@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thống Kê Truy Cập</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 Thống Kê Truy Cập</h1>
+        </div>
+        
+        <div class="current-site">
+            <div class="site-info">
+                <div class="site-url" id="current-url">Đang tải...</div>
+                <div class="visit-count">
+                    <span class="label">Số lượt truy cập:</span>
+                    <span class="count" id="visit-count">0</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button id="clear-btn" class="btn btn-danger">🗑️ Xóa lịch sử</button>
+        </div>
+        
+        <div class="chart-section">
+            <h2>📊 Top 10 Trang Web Truy Cập Nhiều Nhất</h2>
+            <div id="chart-container" class="chart-container">
+                <div class="loading">Đang tải...</div>
+            </div>
+        </div>
+        
+        <div class="history-section">
+            <h2>📜 Lịch sử truy cập</h2>
+            <div class="filter-controls">
+                <select id="filter-select">
+                    <option value="all">Tất cả trang</option>
+                    <option value="current">Trang hiện tại</option>
+                </select>
+            </div>
+            <div id="history-list" class="history-list">
+                <div class="loading">Đang tải...</div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="popup.js"></script>
+</body>
+</html>
+
