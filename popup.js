@@ -1,59 +1,31 @@
 // Popup script for Chrome Extension
 
-let currentUrl = '';
 let currentDomain = '';
 
 // Initialize popup
 document.addEventListener('DOMContentLoaded', async () => {
-    await loadCurrentTab();
-    await updateVisitCount();
+    // Get current domain for filter
+    try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab && tab.url) {
+            try {
+                currentDomain = new URL(tab.url).hostname;
+            } catch (e) {
+                currentDomain = '';
+            }
+        }
+    } catch (error) {
+        console.error('Error loading current tab:', error);
+    }
+    
     await loadTop10Chart();
     await loadHistory();
     
     // Event listeners
-    document.getElementById('clear-btn').addEventListener('click', async () => {
-        if (confirm('Bạn có chắc muốn xóa toàn bộ lịch sử truy cập?')) {
-            await clearHistory();
-            await updateVisitCount();
-            await loadTop10Chart();
-            await loadHistory();
-        }
-    });
-    
     document.getElementById('filter-select').addEventListener('change', async () => {
         await loadHistory();
     });
 });
-
-// Get current active tab
-async function loadCurrentTab() {
-    try {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (tab && tab.url) {
-            currentUrl = tab.url;
-            currentDomain = new URL(tab.url).hostname;
-            document.getElementById('current-url').textContent = currentDomain;
-        } else {
-            document.getElementById('current-url').textContent = 'Không có trang nào';
-        }
-    } catch (error) {
-        console.error('Error loading current tab:', error);
-        document.getElementById('current-url').textContent = 'Lỗi tải trang';
-    }
-}
-
-// Update visit count for current site
-async function updateVisitCount() {
-    try {
-        const result = await chrome.storage.local.get(['visitHistory']);
-        const visitHistory = result.visitHistory || {};
-        
-        const count = visitHistory[currentDomain] ? visitHistory[currentDomain].count : 0;
-        document.getElementById('visit-count').textContent = count;
-    } catch (error) {
-        console.error('Error updating visit count:', error);
-    }
-}
 
 // Load and display history
 async function loadHistory() {
@@ -78,13 +50,27 @@ async function loadHistory() {
                 domain: domain,
                 count: data.count,
                 lastVisit: data.lastVisit,
-                visits: data.visits || []
+                visits: data.visits || [],
+                urls: data.urls || []
             });
         }
         
         // Sort by last visit time (most recent first)
         historyItems.sort((a, b) => {
-            return new Date(b.lastVisit) - new Date(a.lastVisit);
+            let aTime = a.lastVisit;
+            let bTime = b.lastVisit;
+            
+            // Get actual last visit from visits array if available
+            if (a.visits && a.visits.length > 0) {
+                const lastA = a.visits[a.visits.length - 1];
+                aTime = typeof lastA === 'object' ? lastA.timestamp : lastA;
+            }
+            if (b.visits && b.visits.length > 0) {
+                const lastB = b.visits[b.visits.length - 1];
+                bTime = typeof lastB === 'object' ? lastB.timestamp : lastB;
+            }
+            
+            return new Date(bTime) - new Date(aTime);
         });
         
         if (historyItems.length === 0) {
@@ -115,15 +101,53 @@ function createHistoryItem(item) {
     const div = document.createElement('div');
     div.className = 'history-item';
     
-    const lastVisit = new Date(item.lastVisit);
+    // Get last visit timestamp (handle both old and new format)
+    let lastVisitTime = item.lastVisit;
+    if (item.visits && item.visits.length > 0) {
+        const lastVisit = item.visits[item.visits.length - 1];
+        if (typeof lastVisit === 'object' && lastVisit.timestamp) {
+            lastVisitTime = lastVisit.timestamp;
+        } else if (typeof lastVisit === 'string') {
+            lastVisitTime = lastVisit;
+        }
+    }
+    const lastVisit = new Date(lastVisitTime);
     const timeString = formatDateTime(lastVisit);
+    
+    // Get the most recent full URL if available
+    let mostRecentUrl = `https://${item.domain}`;
+    if (item.visits && item.visits.length > 0) {
+        const lastVisit = item.visits[item.visits.length - 1];
+        if (typeof lastVisit === 'object' && lastVisit.url) {
+            mostRecentUrl = lastVisit.url;
+        } else if (item.urls && item.urls.length > 0) {
+            mostRecentUrl = item.urls[item.urls.length - 1];
+        }
+    } else if (item.urls && item.urls.length > 0) {
+        mostRecentUrl = item.urls[item.urls.length - 1];
+    }
+    
+    // Make domain/URL clickable - show full URL if available
+    const domainLink = document.createElement('a');
+    domainLink.href = mostRecentUrl;
+    domainLink.className = 'history-item-url clickable-link';
+    // Show full URL if it's different from just domain
+    const displayText = mostRecentUrl !== `https://${item.domain}` 
+        ? mostRecentUrl.replace(/^https?:\/\//, '') 
+        : item.domain;
+    domainLink.textContent = displayText.length > 40 ? displayText.substring(0, 37) + '...' : displayText;
+    domainLink.title = mostRecentUrl; // Show full URL in tooltip
+    domainLink.target = '_blank';
+    domainLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        chrome.tabs.create({ url: mostRecentUrl });
+    });
     
     div.innerHTML = `
         <div class="history-item-header">
-            <div class="history-item-url" title="${item.domain}">${item.domain}</div>
             <div class="history-item-time">${timeString}</div>
         </div>
-        <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
             <div class="history-item-count">${item.count} lượt truy cập</div>
             <button class="btn-details" data-domain="${item.domain}" style="
                 padding: 4px 8px;
@@ -136,6 +160,10 @@ function createHistoryItem(item) {
             ">Chi tiết</button>
         </div>
     `;
+    
+    // Insert clickable domain link
+    const header = div.querySelector('.history-item-header');
+    header.insertBefore(domainLink, header.firstChild);
     
     // Add click handler for details button
     const detailsBtn = div.querySelector('.btn-details');
@@ -173,24 +201,106 @@ function showVisitDetails(item) {
         width: 500px;
     `;
     
-    const visitsList = item.visits
-        .sort((a, b) => new Date(b) - new Date(a))
-        .map(visit => {
-            const date = new Date(visit);
-            return `<div style="padding: 8px; border-bottom: 1px solid #eee;">
-                ${formatDateTime(date)}
-            </div>`;
+    // Create visits list with timestamps and URLs
+    let visitsList = '';
+    if (item.visits && item.visits.length > 0) {
+        // Process all visits and ensure each has a URL
+        const processedVisits = item.visits
+            .map((visit, index) => {
+                let timestamp, url;
+                
+                if (typeof visit === 'string') {
+                    // Old format: just timestamp string
+                    timestamp = visit;
+                    // Try to get URL from urls array, use most recent if available
+                    if (item.urls && item.urls.length > 0) {
+                        // Use the most recent unique URL (not just domain)
+                        const uniqueUrls = item.urls.filter(u => u && u !== `https://${item.domain}`);
+                        url = uniqueUrls.length > 0 ? uniqueUrls[uniqueUrls.length - 1] : item.urls[item.urls.length - 1];
+                    } else {
+                        url = `https://${item.domain}`;
+                    }
+                } else if (visit && visit.timestamp) {
+                    // New format: object with timestamp and url
+                    timestamp = visit.timestamp;
+                    // ALWAYS use the URL from visit if it exists - this is the actual URL visited
+                    if (visit.url && visit.url.trim()) {
+                        url = visit.url; // Use the exact URL that was visited
+                    } else if (item.urls && item.urls.length > 0) {
+                        // Fallback to most recent URL from urls array only if visit.url is missing
+                        const uniqueUrls = item.urls.filter(u => u && u !== `https://${item.domain}`);
+                        url = uniqueUrls.length > 0 ? uniqueUrls[uniqueUrls.length - 1] : item.urls[item.urls.length - 1];
+                    } else {
+                        url = `https://${item.domain}`;
+                    }
+                } else {
+                    return null; // Invalid format
+                }
+                
+                return {
+                    timestamp: timestamp,
+                    url: url
+                };
+            })
+            .filter(visit => visit !== null) // Remove invalid entries
+            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); // Sort by timestamp (newest first)
+        
+        // Generate HTML for visits list
+        visitsList = processedVisits.map(visit => {
+            const date = new Date(visit.timestamp);
+            // Always use visit.url - it contains the exact URL that was visited
+            const displayUrl = visit.url || `https://${item.domain}`;
+            return `
+                <div style="padding: 10px; border-bottom: 1px solid #eee;">
+                    <div style="font-size: 12px; color: #999; margin-bottom: 4px;">${formatDateTime(date)}</div>
+                    <a href="${displayUrl}" class="detail-url-link" target="_blank" style="
+                        color: #667eea;
+                        text-decoration: none;
+                        font-size: 13px;
+                        word-break: break-all;
+                        display: block;
+                    ">${displayUrl}</a>
+                </div>
+            `;
         }).join('');
+    }
+    
+    // Create full URLs list
+    let urlsList = '';
+    if (item.urls && item.urls.length > 0) {
+        urlsList = `
+            <h3 style="margin-top: 20px; margin-bottom: 10px; font-size: 14px; color: #333;">Các URL đã truy cập:</h3>
+            <div style="max-height: 200px; overflow-y: auto; margin-bottom: 15px;">
+                ${item.urls.map(url => `
+                    <div style="padding: 8px; border-bottom: 1px solid #eee;">
+                        <a href="${url}" class="detail-url-link" target="_blank" style="
+                            color: #667eea;
+                            text-decoration: none;
+                            font-size: 12px;
+                            word-break: break-all;
+                            display: block;
+                        ">${url}</a>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
     
     modalContent.innerHTML = `
-        <h2 style="margin-bottom: 15px; color: #667eea;">${item.domain}</h2>
+        <h2 style="margin-bottom: 15px; color: #667eea;">
+            <a href="https://${item.domain}" class="detail-url-link" target="_blank" style="
+                color: #667eea;
+                text-decoration: none;
+            ">${item.domain}</a>
+        </h2>
         <div style="margin-bottom: 15px;">
             <strong>Tổng số lượt truy cập:</strong> ${item.count}
         </div>
-        <h3 style="margin-bottom: 10px; font-size: 14px;">Lịch sử chi tiết:</h3>
+        <h3 style="margin-bottom: 10px; font-size: 14px; color: #333;">Lịch sử chi tiết:</h3>
         <div style="max-height: 300px; overflow-y: auto;">
             ${visitsList || '<div style="padding: 20px; text-align: center; color: #999;">Chưa có lịch sử chi tiết</div>'}
         </div>
+        ${urlsList}
         <button id="close-modal" style="
             margin-top: 15px;
             padding: 10px 20px;
@@ -202,6 +312,14 @@ function showVisitDetails(item) {
             width: 100%;
         ">Đóng</button>
     `;
+    
+    // Add click handlers for all links in modal
+    modalContent.querySelectorAll('.detail-url-link').forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            chrome.tabs.create({ url: link.href });
+        });
+    });
     
     modal.appendChild(modalContent);
     document.body.appendChild(modal);
@@ -273,10 +391,16 @@ async function loadTop10Chart() {
             
             const percentage = (site.count / maxCount) * 100;
             
-            const label = document.createElement('div');
-            label.className = 'chart-label';
+            const label = document.createElement('a');
+            label.className = 'chart-label clickable-link';
+            label.href = `https://${site.domain}`;
             label.textContent = truncateDomain(site.domain, 25);
             label.title = site.domain;
+            label.target = '_blank';
+            label.addEventListener('click', (e) => {
+                e.preventDefault();
+                chrome.tabs.create({ url: label.href });
+            });
             
             const barWrapper = document.createElement('div');
             barWrapper.className = 'chart-bar-wrapper';

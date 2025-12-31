@@ -151,12 +151,20 @@ body {
 .chart-label {
     width: 120px;
     font-size: 12px;
-    color: #666;
+    color: #667eea;
     font-weight: 500;
     text-align: right;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.chart-label:hover {
+    text-decoration: underline;
+    opacity: 0.8;
 }
 
 .chart-bar-wrapper {
@@ -273,6 +281,16 @@ body {
     flex: 1;
     word-break: break-all;
     margin-right: 10px;
+}
+
+.clickable-link {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.clickable-link:hover {
+    text-decoration: underline !important;
+    opacity: 0.8;
 }
 
 .history-item-time {

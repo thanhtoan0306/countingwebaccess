@@ -44,7 +44,8 @@ async function trackVisit(url) {
             visitHistory[domain] = {
                 count: 0,
                 lastVisit: now,
-                visits: []
+                visits: [],
+                urls: [] // Store full URLs
             };
         }
         
@@ -52,15 +53,32 @@ async function trackVisit(url) {
         visitHistory[domain].count += 1;
         visitHistory[domain].lastVisit = now;
         
-        // Add to visits array (keep last 100 visits per domain)
+        // Add to visits array with URL (keep last 100 visits per domain)
         if (!visitHistory[domain].visits) {
             visitHistory[domain].visits = [];
         }
-        visitHistory[domain].visits.push(now);
+        // Always store full URL with each visit
+        visitHistory[domain].visits.push({
+            timestamp: now,
+            url: url // Store complete URL including path, query, etc.
+        });
+        
+        // Add full URL to unique urls array (for quick reference)
+        if (!visitHistory[domain].urls) {
+            visitHistory[domain].urls = [];
+        }
+        if (!visitHistory[domain].urls.includes(url)) {
+            visitHistory[domain].urls.push(url);
+        }
         
         // Keep only last 100 visits per domain to avoid storage bloat
         if (visitHistory[domain].visits.length > 100) {
             visitHistory[domain].visits = visitHistory[domain].visits.slice(-100);
+        }
+        
+        // Keep only last 50 unique URLs per domain
+        if (visitHistory[domain].urls.length > 50) {
+            visitHistory[domain].urls = visitHistory[domain].urls.slice(-50);
         }
         
         // Save to storage
